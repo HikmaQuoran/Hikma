@@ -399,8 +399,11 @@ const initDB = () => {
 const SUPABASE_URL = 'https://vzwwpkjtwmzwigtzrgux.supabase.co/rest/v1/';
 const SUPABASE_KEY = 'Sb_publishable_Hel4qCC-dbuN5a1GJM8HGA_w-m2yd2w';
 
-const useCloudDB = () => SUPABASE_URL.startsWith('https://')
-    && SUPABASE_KEY.length > 20
+const sbBase = () => SUPABASE_URL.trim().replace(/\/+$/, '');
+
+const useCloudDB = () => !sessionStorage.getItem('forceLocalDB')
+    && SUPABASE_URL.trim().startsWith('https://')
+    && SUPABASE_KEY.trim().length > 20
     && !SUPABASE_KEY.includes('VOTRE');
 
 function sbHeaders() {
@@ -456,7 +459,7 @@ const idbRemove = (store, id) => {
 // ==================== COUCHE UNIFIÉE (Supabase si configuré, sinon IndexedDB) ====================
 const getAll = async (store) => {
     if (useCloudDB()) {
-        const res = await fetch(SUPABASE_URL + '/rest/v1/' + store + '?select=*', { headers: sbHeaders() });
+        const res = await fetch(sbBase() + '/rest/v1/' + store + '?select=*', { headers: sbHeaders() });
         if (!res.ok) throw new Error('Erreur base de données (' + res.status + ')');
         return res.json();
     }
@@ -465,7 +468,7 @@ const getAll = async (store) => {
 
 const add = async (store, data) => {
     if (useCloudDB()) {
-        const res = await fetch(SUPABASE_URL + '/rest/v1/' + store, {
+        const res = await fetch(sbBase() + '/rest/v1/' + store, {
             method: 'POST', headers: sbHeaders(), body: JSON.stringify(data)
         });
         if (!res.ok) throw new Error('Erreur insertion (' + res.status + ')');
@@ -478,7 +481,7 @@ const add = async (store, data) => {
 const update = async (store, data) => {
     if (useCloudDB()) {
         const { id, ...fields } = data;
-        const res = await fetch(SUPABASE_URL + '/rest/v1/' + store + '?id=eq.' + id, {
+        const res = await fetch(sbBase() + '/rest/v1/' + store + '?id=eq.' + id, {
             method: 'PATCH', headers: sbHeaders(), body: JSON.stringify(fields)
         });
         if (!res.ok) throw new Error('Erreur mise à jour (' + res.status + ')');
@@ -489,7 +492,7 @@ const update = async (store, data) => {
 
 const remove = async (store, id) => {
     if (useCloudDB()) {
-        const res = await fetch(SUPABASE_URL + '/rest/v1/' + store + '?id=eq.' + id, {
+        const res = await fetch(sbBase() + '/rest/v1/' + store + '?id=eq.' + id, {
             method: 'DELETE', headers: sbHeaders()
         });
         if (!res.ok) throw new Error('Erreur suppression (' + res.status + ')');
@@ -821,14 +824,20 @@ async function doLogin() {
         return;
     }
 
-    const user = await login(username, password);
-    if (user) {
-        setCurrentUser(user);
-        showApp();
-        showToast('تم تسجيل الدخول بنجاح');
-        showSection('home');
-    } else {
-        showToast('اسم المستخدم أو كلمة المرور غير صحيحة', 'error');
+    try {
+        const user = await login(username, password);
+        if (user) {
+            setCurrentUser(user);
+            showApp();
+            showToast('تم تسجيل الدخول بنجاح');
+            showSection('home');
+        } else {
+            showToast('اسم المستخدم أو كلمة المرور غير صحيحة', 'error');
+        }
+    } catch (e) {
+        console.error('Erreur login:', e);
+        showToast('تعذر الاتصال بقاعدة البيانات', 'error');
+        showDBError(e);
     }
 }
 
@@ -1465,13 +1474,49 @@ function exportExcel() {
 }
 
 // ==================== INIT ====================
+function forceLocalMode() {
+    sessionStorage.setItem('forceLocalDB', '1');
+    location.reload();
+}
+
+function showDBError(e) {
+    const card = document.querySelector('#login-overlay .bg-white');
+    if (!card) return;
+    let box = document.getElementById('db-error-box');
+    if (!box) {
+        box = document.createElement('div');
+        box.id = 'db-error-box';
+        box.className = 'mt-4 p-4 rounded-xl bg-red-50 border border-red-200 text-right';
+        card.appendChild(box);
+    }
+    const status = (e && e.message) ? e.message : String(e);
+    const causes = {
+        '404': 'الجداول غير موجودة: نفّذ ملف supabase_tables.sql في SQL Editor',
+        '401': 'مفتاح anon key غير صحيح أو منسوخ بشكل غير كامل',
+        'Failed to fetch': 'تعذر الوصول إلى Supabase: تحقق من Project URL والإنترنت'
+    };
+    let hint = 'تحقق من SUPABASE_URL و SUPABASE_KEY، وأن المشروع غير موقوف (Paused)';
+    for (const k in causes) { if (status.includes(k)) { hint = causes[k]; break; } }
+    box.innerHTML = `
+        <p class="text-red-700 font-bold text-sm mb-1"><i class="fas fa-exclamation-triangle ml-1"></i> خطأ في الاتصال بقاعدة البيانات</p>
+        <p class="text-red-600 text-xs leading-relaxed break-all">${status}</p>
+        <p class="text-slate-600 text-xs mt-2 font-medium">${hint}</p>
+        <button onclick="forceLocalMode()" class="mt-3 w-full px-4 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm font-bold transition-all">العمل مؤقتاً بدون مشاركة البيانات (محلي)</button>`;
+}
+
 window.onload = async () => {
-    if (!useCloudDB()) await initDB();
-    await initDefaultUser();
-    if (!checkAuth()) {
+    try {
+        if (!useCloudDB()) await initDB();
+        await initDefaultUser();
+        if (!checkAuth()) {
+            showLogin();
+        } else {
+            showSection('home');
+        }
+    } catch (e) {
+        console.error('Erreur initialisation:', e);
         showLogin();
-    } else {
-        showSection('home');
+        showDBError(e);
     }
 };
 </script>
