@@ -70,6 +70,7 @@
         </div>
 
         <p class="text-xs text-slate-400 mt-6">المستخدم الافتراضي: admin / admin</p>
+        <p id="app-version" class="text-xs text-slate-500 mt-1 font-mono"></p>
     </div>
 </div>
 
@@ -397,6 +398,8 @@ const initDB = () => {
 //   2) Ouvrez SQL Editor, exécutez le script de création des tables (fichier supabase_tables.sql)
 //   3) Settings -> API : copiez "Project URL" et "anon public key" ci-dessous
 //   4) Re-téléversez le fichier sur GitHub Pages
+const APP_VERSION = '2.2';
+
 const SUPABASE_URL = 'https://VOTRE_PROJET.supabase.co';
 const SUPABASE_KEY = 'VOTRE_CLE_ANON';
 
@@ -1507,6 +1510,8 @@ function showDBError(e) {
 
 window.onload = async () => {
     try {
+        const vLabel = document.getElementById('app-version');
+        if (vLabel) vLabel.textContent = 'الإصدار ' + APP_VERSION + (useCloudDB() ? ' - وضع السحابة (Supabase)' : ' - وضع محلي');
         if (!useCloudDB()) await initDB();
         await initDefaultUser();
         if (!checkAuth()) {
