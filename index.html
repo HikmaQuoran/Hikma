@@ -400,8 +400,8 @@ const initDB = () => {
 //   4) Re-téléversez le fichier sur GitHub Pages
 const APP_VERSION = '2.2';
 
-const SUPABASE_URL = 'https://bgxytpcduoguhvprdysr.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_97PufELpv1l4CqvJ2i_1SQ_K8ZdPL9k';
+const SUPABASE_URL = 'https://VOTRE_PROJET.supabase.co';
+const SUPABASE_KEY = 'VOTRE_CLE_ANON';
 
 const sbBase = () => SUPABASE_URL.trim().replace(/\/+$/, '').replace(/\/rest\/v1$/i, '');
 
@@ -802,10 +802,32 @@ function showLogin() {
     document.getElementById('login-username').focus();
 }
 
+function applyMenuPermissions() {
+    const isAdmin = currentUser && currentUser.role === 'admin';
+    const perms = (currentUser && currentUser.permissions) || [];
+    const allSections = ['teachers', 'deptNames', 'students', 'classes', 'schedule', 'attendance', 'grades'];
+    // Masquer les entrées du menu latéral non autorisées
+    allSections.forEach(s => {
+        const btn = document.getElementById('btn-' + s);
+        if (btn) btn.classList.toggle('hidden', !isAdmin && !perms.includes(s));
+    });
+    // المستخدمون réservé à l'administrateur
+    const usersBtn = document.getElementById('btn-users');
+    if (usersBtn) usersBtn.classList.toggle('hidden', !isAdmin);
+    // Masquer aussi les cartes de la page d'accueil non autorisées
+    document.querySelectorAll('#home-section button[onclick^="showSection"]').forEach(card => {
+        const m = card.getAttribute('onclick').match(/showSection\('([^']+)'\)/);
+        if (m && m[1] !== 'home') {
+            card.classList.toggle('hidden', !isAdmin && !perms.includes(m[1]));
+        }
+    });
+}
+
 function showApp() {
     document.getElementById('login-overlay').classList.add('hidden');
     document.getElementById('app-container').classList.remove('hidden');
     updateUserDisplay();
+    applyMenuPermissions();
 }
 
 function updateUserDisplay() {
