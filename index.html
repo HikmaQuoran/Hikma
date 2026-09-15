@@ -124,6 +124,10 @@
             <i class="fas fa-star w-5"></i>
             <span>التقييم</span>
         </button>
+        <button onclick="showSection('smartsearch')" id="btn-smartsearch" class="sidebar-item w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-slate-50 text-slate-600 font-medium">
+            <i class="fas fa-brain w-5"></i>
+            <span>البحث الذكي</span>
+        </button>
     </nav>
     <div class="absolute bottom-0 right-0 left-0 p-4 border-t border-slate-100 bg-white space-y-2">
         <button onclick="showSection('users')" id="btn-users" class="sidebar-item w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-slate-50 text-slate-600 font-medium">
@@ -202,6 +206,13 @@
                         <h3 class="font-bold text-slate-800">التقييم</h3>
                         <p class="text-sm text-slate-500 mt-1">تقييم أداء الطلاب</p>
                     </button>
+                    <button onclick="showSection('smartsearch')" class="bg-white/90 hover:bg-white rounded-2xl p-6 shadow-lg border border-slate-100 transition-all hover:shadow-xl hover:-translate-y-1 group">
+                        <div class="w-14 h-14 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600 text-xl mx-auto mb-3 group-hover:bg-indigo-600 group-hover:text-white transition-all">
+                            <i class="fas fa-brain"></i>
+                        </div>
+                        <h3 class="font-bold text-slate-800">البحث الذكي</h3>
+                        <p class="text-sm text-slate-500 mt-1">اسأل باللغة العربية</p>
+                    </button>
                     <button onclick="showSection('deptNames')" class="bg-white/90 hover:bg-white rounded-2xl p-6 shadow-lg border border-slate-100 transition-all hover:shadow-xl hover:-translate-y-1 group">
                         <div class="w-14 h-14 bg-cyan-100 rounded-xl flex items-center justify-center text-cyan-600 text-xl mx-auto mb-3 group-hover:bg-cyan-600 group-hover:text-white transition-all">
                             <i class="fas fa-list"></i>
@@ -212,6 +223,29 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- ========== SMART SEARCH SECTION ========== -->
+    <div id="smartsearch-section" class="hidden fade-in">
+        <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 mb-6 no-print">
+            <h2 class="text-2xl font-bold text-slate-800 mb-1"><i class="fas fa-brain text-indigo-600 ml-2"></i>البحث الذكي</h2>
+            <p class="text-slate-500 mb-5">اسأل بالعربية عن أي طالب، مثال: « نسبة حضور الطالب أحمد »</p>
+            <div class="relative">
+                <i class="fas fa-search absolute right-4 top-1/2 -translate-y-1/2 text-indigo-400"></i>
+                <input type="text" id="smart-query" onkeypress="if(event.key==='Enter')smartSearch()"
+                    placeholder="اكتب سؤالك هنا مثلاً: قسم الطالب أحمد"
+                    class="w-full pr-12 pl-4 py-4 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all text-lg">
+            </div>
+            <button onclick="smartSearch()" class="mt-4 w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 rounded-xl shadow-lg shadow-indigo-200 transition-all font-bold text-lg">
+                <i class="fas fa-search ml-2"></i> بحث
+            </button>
+            <div class="flex flex-wrap gap-2 mt-4">
+                <button onclick="askExample('أعداد الطالب أحمد')" class="px-4 py-2 rounded-full bg-slate-100 hover:bg-indigo-100 hover:text-indigo-700 text-slate-600 text-sm font-medium transition-all">أعداد الطالب أحمد</button>
+                <button onclick="askExample('نسبة حضور الطالب أحمد')" class="px-4 py-2 rounded-full bg-slate-100 hover:bg-indigo-100 hover:text-indigo-700 text-slate-600 text-sm font-medium transition-all">نسبة حضور الطالب أحمد</button>
+                <button onclick="askExample('قسم الطالب أحمد')" class="px-4 py-2 rounded-full bg-slate-100 hover:bg-indigo-100 hover:text-indigo-700 text-slate-600 text-sm font-medium transition-all">قسم الطالب أحمد</button>
+            </div>
+        </div>
+        <div id="smart-result"></div>
     </div>
 
     <!-- ========== DATA SECTION (hidden by default) ========== -->
@@ -633,7 +667,8 @@ const sections = {
                 {value: 'classes', label: 'الأقسام'},
                 {value: 'attendance', label: 'الحضور'},
                 {value: 'grades', label: 'التقييم'},
-                {value: 'schedule', label: 'الجدول الزمني'}
+                {value: 'schedule', label: 'الجدول الزمني'},
+                {value: 'smartsearch', label: 'البحث الذكي'}
             ]}
         ],
         tableCols: ['المعرف', 'اسم المستخدم', 'الاسم الكامل', 'الدور', 'الصلاحيات', 'الإجراءات'],
@@ -689,10 +724,12 @@ function showSection(section) {
 
     const homeSection = document.getElementById('home-section');
     const dataSection = document.getElementById('data-section');
+    const smartSection = document.getElementById('smartsearch-section');
 
     if (section === 'home') {
         homeSection.classList.remove('hidden');
         dataSection.classList.add('hidden');
+        smartSection.classList.add('hidden');
         return;
     }
 
@@ -709,7 +746,16 @@ function showSection(section) {
         }
     }
 
+    if (section === 'smartsearch') {
+        homeSection.classList.add('hidden');
+        dataSection.classList.add('hidden');
+        smartSection.classList.remove('hidden');
+        prepareSmartSearch();
+        return;
+    }
+
     homeSection.classList.add('hidden');
+    smartSection.classList.add('hidden');
     dataSection.classList.remove('hidden');
     document.getElementById('page-title').textContent = sections[section].title;
     document.getElementById('page-desc').textContent = sections[section].desc;
@@ -805,7 +851,7 @@ function showLogin() {
 function applyMenuPermissions() {
     const isAdmin = currentUser && currentUser.role === 'admin';
     const perms = (currentUser && currentUser.permissions) || [];
-    const allSections = ['teachers', 'deptNames', 'students', 'classes', 'schedule', 'attendance', 'grades'];
+    const allSections = ['teachers', 'deptNames', 'students', 'classes', 'schedule', 'attendance', 'grades', 'smartsearch'];
     // Masquer les entrées du menu latéral non autorisées
     allSections.forEach(s => {
         const btn = document.getElementById('btn-' + s);
@@ -909,7 +955,7 @@ function renderTable(data) {
             cells += `<td class="px-6 py-4 text-sm font-semibold text-sky-900">${item.username}</td>`;
             cells += `<td class="px-6 py-4 text-sm text-sky-900">${item.fullName}</td>`;
             cells += `<td class="px-6 py-4 text-sm"><span class="px-3 py-1 rounded-full text-xs font-medium ${item.role === 'admin' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}">${item.role === 'admin' ? 'مدير' : 'مستخدم'}</span></td>`;
-            const permLabels = { teachers: 'المدرسين', deptNames: 'أسامي الأقسام', students: 'الطلاب', classes: 'الأقسام', attendance: 'الحضور', grades: 'التقييم', schedule: 'الجدول الزمني' };
+            const permLabels = { teachers: 'المدرسين', deptNames: 'أسامي الأقسام', students: 'الطلاب', classes: 'الأقسام', attendance: 'الحضور', grades: 'التقييم', schedule: 'الجدول الزمني', smartsearch: 'البحث الذكي' };
             const permsText = (item.role === 'admin') ? 'كل الأقسام' : (item.permissions || []).map(p => permLabels[p] || p).join('، ') || 'بدون صلاحيات';
             cells += `<td class="px-6 py-4 text-sm text-slate-500">${permsText}</td>`;
         } else if (currentSection === 'deptNames') {
@@ -1278,6 +1324,207 @@ async function searchData() {
         return searchText.includes(query);
     });
     renderTable(filtered);
+}
+
+
+// ==================== RECHERCHE INTELLIGENTE ====================
+function normalizeAr(s) {
+    return String(s || '')
+        .replace(/[\u064B-\u0652\u0670]/g, '')
+        .replace(/[أإآٱ]/g, 'ا')
+        .replace(/ى/g, 'ي')
+        .replace(/ة/g, 'ه')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+}
+
+const SMART_STOP_WORDS = ['الطالب','الطالبه','الطالب','طالب','الحضور','حضور','الغياب','غياب','نسبه','النسبه','قسم','القسم','اقسام','الاقسام','اعداد','عداد','عدد','العدد','احصائيات','احصاء','درجات','الدرجات','نقاط','النقاط','معدل','المعدل','تقييم','التقييم','مواد','المواد','معلم','المدرس','الاستاذ','اليوم','التاريخ','كم','ما','ماذا','من','في','علي','عن','لي','له','ل'];
+
+async function prepareSmartSearch() {
+    await refreshCache();
+    const q = document.getElementById('smart-query');
+    if (q) q.focus();
+}
+
+function askExample(text) {
+    document.getElementById('smart-query').value = text;
+    smartSearch();
+}
+
+function smartFindStudent(nameNorm, students) {
+    let hits = students.filter(s => normalizeAr(s.firstName + ' ' + s.lastName).includes(nameNorm));
+    if (hits.length === 0 && nameNorm.includes(' ')) {
+        const first = nameNorm.split(' ')[0];
+        hits = students.filter(s => normalizeAr(s.firstName).includes(first) || normalizeAr(s.lastName).includes(first));
+    }
+    if (hits.length === 0) {
+        hits = students.filter(s => normalizeAr(s.firstName).includes(nameNorm) || normalizeAr(s.lastName).includes(nameNorm));
+    }
+    return hits[0] || null;
+}
+
+function smartInfoCard(title, body) {
+    return `<div class="bg-white rounded-xl shadow-sm border border-slate-100 p-8 text-center fade-in">
+        <div class="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-400 text-2xl"><i class="fas fa-info-circle"></i></div>
+        <h3 class="font-bold text-slate-700 mb-1">${title}</h3>
+        <p class="text-slate-500 text-sm">${body}</p>
+    </div>`;
+}
+
+function smartAnswerShell(question, inner) {
+    return `<div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden fade-in">
+        <div class="bg-indigo-600 px-6 py-4 flex items-center gap-3">
+            <i class="fas fa-brain text-white text-xl"></i>
+            <div>
+                <p class="text-indigo-200 text-xs">السؤال</p>
+                <p class="text-white font-bold">${question}</p>
+            </div>
+        </div>
+        <div class="p-6">${inner}</div>
+    </div>`;
+}
+
+function statBlock(label, value, color) {
+    return `<div class="bg-${color}-50 rounded-xl p-4 text-center">
+        <p class="text-2xl font-bold text-${color}-700">${value}</p>
+        <p class="text-sm text-${color}-600 mt-1">${label}</p>
+    </div>`;
+}
+
+function renderAttendanceAnswer(student, fullName, attendance) {
+    const recs = attendance.filter(a => String(a.studentId) === String(student.id));
+    if (recs.length === 0) return smartInfoCard('لا توجد سجلات حضور', 'لم يتم تسجيل حضور للطالب <b>' + fullName + '</b> بعد');
+    const present = recs.filter(a => a.present === 'نعم').length;
+    const absent = recs.length - present;
+    const rate = Math.round(present / recs.length * 100);
+    const barColor = rate >= 80 ? 'bg-green-500' : rate >= 50 ? 'bg-amber-500' : 'bg-red-500';
+    const lastDate = recs.map(r => r.date).sort().pop();
+    const inner = `
+        <p class="text-slate-500 text-sm mb-4">الطالب: <b class="text-slate-800">${fullName}</b></p>
+        <div class="grid grid-cols-3 gap-4 mb-5">
+            ${statBlock('إجمالي الأيام', recs.length, 'blue')}
+            ${statBlock('أيام الحضور', present, 'green')}
+            ${statBlock('أيام الغياب', absent, 'red')}
+        </div>
+        <div class="mb-2 flex justify-between text-sm font-bold"><span class="text-slate-600">نسبة الحضور</span><span class="text-slate-800">${rate}%</span></div>
+        <div class="w-full bg-slate-100 rounded-full h-4 overflow-hidden"><div class="${barColor} h-4 rounded-full transition-all" style="width:${rate}%"></div></div>
+        <p class="text-xs text-slate-400 mt-4">آخر تسجيل: ${lastDate}</p>`;
+    return smartAnswerShell('نسبة حضور الطالب ' + fullName, inner);
+}
+
+function renderClassesAnswer(student, fullName) {
+    const classes = (allCache['classes'] || []).filter(c => String(c.studentId) === String(student.id));
+    if (classes.length === 0) return smartInfoCard('غير مسجل في أي قسم', 'الطالب <b>' + fullName + '</b> غير مسجل في الأقسام');
+    const deptIds = [...new Set(classes.map(c => String(c.deptNameId)))];
+    const deptNames = deptIds.map(id => getNameById(id, 'deptNames', 'name'));
+    const teacherNames = [...new Set(classes.map(c => getNameById(c.teacherId, 'teachers', 'firstName', 'lastName')))];
+    const inner = `
+        <p class="text-slate-500 text-sm mb-4">الطالب: <b class="text-slate-800">${fullName}</b></p>
+        <div class="space-y-3">
+            <div class="bg-blue-50 rounded-xl p-4">
+                <p class="text-sm text-blue-600 mb-1"><i class="fas fa-chalkboard ml-1"></i>القسم (الأقسام)</p>
+                <p class="font-bold text-blue-800 text-lg">${deptNames.join('، ')}</p>
+            </div>
+            <div class="bg-amber-50 rounded-xl p-4">
+                <p class="text-sm text-amber-600 mb-1"><i class="fas fa-user-tie ml-1"></i>المدرس (المدرسون)</p>
+                <p class="font-bold text-amber-800 text-lg">${teacherNames.join('، ')}</p>
+            </div>
+        </div>`;
+    return smartAnswerShell('قسم الطالب ' + fullName, inner);
+}
+
+function renderGradesAnswer(student, fullName, grades) {
+    const recs = grades.filter(g => String(g.studentId) === String(student.id)).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    if (recs.length === 0) return smartInfoCard('لا توجد تقييمات', 'لم يتم تقييم الطالب <b>' + fullName + '</b> بعد');
+    const avg = (recs.reduce((s, g) => s + (parseFloat(g.score) || 0), 0) / recs.length).toFixed(1);
+    const rows = recs.map(g => `
+        <tr class="hover:bg-slate-50">
+            <td class="px-4 py-2.5 text-sm text-slate-700">${g.subject || '-'}</td>
+            <td class="px-4 py-2.5 text-sm text-slate-500 font-mono">${g.date || '-'}</td>
+            <td class="px-4 py-2.5 text-sm font-bold ${g.score >= 10 ? 'text-green-600' : 'text-red-600'}">${g.score}/20</td>
+        </tr>`).join('');
+    const inner = `
+        <p class="text-slate-500 text-sm mb-4">الطالب: <b class="text-slate-800">${fullName}</b></p>
+        <div class="grid grid-cols-2 gap-4 mb-5">
+            ${statBlock('عدد التقييمات', recs.length, 'blue')}
+            ${statBlock('المعدل العام', avg + ' / 20', parseFloat(avg) >= 10 ? 'green' : 'red')}
+        </div>
+        <div class="border border-slate-200 rounded-xl overflow-hidden">
+            <table class="w-full">
+                <thead class="bg-slate-50 border-b border-slate-100"><tr>
+                    <th class="px-4 py-3 text-right text-sm font-semibold text-slate-700">المادة</th>
+                    <th class="px-4 py-3 text-right text-sm font-semibold text-slate-700">التاريخ</th>
+                    <th class="px-4 py-3 text-right text-sm font-semibold text-slate-700">النقطة</th>
+                </tr></thead>
+                <tbody class="divide-y divide-slate-100">${rows}</tbody>
+            </table>
+        </div>`;
+    return smartAnswerShell('أعداد (تقييمات) الطالب ' + fullName, inner);
+}
+
+function renderGeneralAnswer(student, fullName, attendance, grades) {
+    const recs = attendance.filter(a => String(a.studentId) === String(student.id));
+    const present = recs.filter(a => a.present === 'نعم').length;
+    const rate = recs.length ? Math.round(present / recs.length * 100) : null;
+    const gRecs = grades.filter(g => String(g.studentId) === String(student.id));
+    const avg = gRecs.length ? (gRecs.reduce((s, g) => s + (parseFloat(g.score) || 0), 0) / gRecs.length).toFixed(1) : null;
+    const classes = (allCache['classes'] || []).filter(c => String(c.studentId) === String(student.id));
+    const deptNames = [...new Set(classes.map(c => getNameById(c.deptNameId, 'deptNames', 'name')))].join('، ') || 'غير مسجل';
+    const inner = `
+        <div class="flex items-center gap-4 mb-6">
+            <div class="w-14 h-14 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 text-2xl"><i class="fas fa-user-graduate"></i></div>
+            <div>
+                <p class="font-bold text-xl text-slate-800">${fullName}</p>
+                <p class="text-sm text-slate-500">المعرف الوحيد: ${student.uniqueId || '-'} | القسم: ${deptNames}</p>
+            </div>
+        </div>
+        <div class="grid grid-cols-3 gap-4">
+            ${statBlock('نسبة الحضور', rate === null ? 'لا يوجد' : rate + '%', rate === null ? 'slate' : rate >= 80 ? 'green' : rate >= 50 ? 'amber' : 'red')}
+            ${statBlock('عدد التقييمات', gRecs.length, 'blue')}
+            ${statBlock('المعدل', avg === null ? 'لا يوجد' : avg + '/20', avg === null ? 'slate' : parseFloat(avg) >= 10 ? 'green' : 'red')}
+        </div>`;
+    return smartAnswerShell('معلومات الطالب ' + fullName, inner);
+}
+
+async function smartSearch() {
+    const query = document.getElementById('smart-query').value;
+    const resultDiv = document.getElementById('smart-result');
+    if (!query.trim()) { showToast('اكتب سؤالاً أولاً', 'error'); return; }
+    resultDiv.innerHTML = '<div class="text-center text-slate-400 py-10"><i class="fas fa-circle-notch fa-spin text-3xl"></i></div>';
+
+    await refreshCache();
+    const students = allCache['students'] || [];
+    const attendance = await getAll('attendance');
+    const grades = await getAll('grades');
+
+    const q = normalizeAr(query);
+    const tokens = q.split(' ').filter(t => t && !SMART_STOP_WORDS.includes(t));
+    const nameNorm = tokens.join(' ');
+
+    if (!nameNorm) {
+        resultDiv.innerHTML = smartInfoCard('لم أفهم السؤال', 'اكتب اسم الطالب بعد السؤال، مثال: « نسبة حضور الطالب أحمد »');
+        return;
+    }
+
+    const student = smartFindStudent(nameNorm, students);
+    if (!student) {
+        resultDiv.innerHTML = smartInfoCard('لم يتم العثور على طالب', 'لا يوجد طالب اسمه: <b>' + nameNorm + '</b> — تحقق من التهجئة');
+        return;
+    }
+
+    const fullName = student.firstName + ' ' + student.lastName;
+    let html;
+    if (q.includes('حضور') || q.includes('غياب')) {
+        html = renderAttendanceAnswer(student, fullName, attendance);
+    } else if (q.includes('قسم')) {
+        html = renderClassesAnswer(student, fullName);
+    } else if (q.includes('اعداد') || q.includes('عداد') || q.includes('عدد') || q.includes('درجات') || q.includes('نقاط') || q.includes('معدل') || q.includes('تقييم') || q.includes('احصائيات') || q.includes('احصاء')) {
+        html = renderGradesAnswer(student, fullName, grades);
+    } else {
+        html = renderGeneralAnswer(student, fullName, attendance, grades);
+    }
+    resultDiv.innerHTML = html;
 }
 
 // ==================== EXPORT ====================
