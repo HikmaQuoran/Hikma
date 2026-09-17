@@ -32,7 +32,6 @@
         .print-only { display: none; }
     </style>
 <base target="_blank">
-<base target="_blank">
 </head>
 <body class="bg-slate-50 text-slate-800">
 
@@ -1339,7 +1338,7 @@ function normalizeAr(s) {
         .toLowerCase();
 }
 
-const SMART_STOP_WORDS = ['الطالب','الطالبه','الطالب','طالب','الحضور','حضور','الغياب','غياب','نسبه','النسبه','قسم','القسم','اقسام','الاقسام','اعداد','عداد','عدد','العدد','احصائيات','احصاء','درجات','الدرجات','نقاط','النقاط','معدل','المعدل','تقييم','التقييم','مواد','المواد','معلم','المدرس','الاستاذ','اليوم','التاريخ','كم','ما','ماذا','من','في','علي','عن','لي','له','ل'];
+const SMART_STOP_WORDS = ['الطالب','الطالبه','طالب','الحضور','حضور','الغياب','غياب','نسبه','النسبه','قسم','القسم','اقسام','الاقسام','اعداد','عداد','عدد','العدد','احصائيات','احصاء','درجات','الدرجات','نقاط','النقاط','معدل','المعدل','تقييم','التقييم','مواد','المواد','معلم','المدرس','الاستاذ','اليوم','التاريخ','كم','ماذا'];
 
 async function prepareSmartSearch() {
     await refreshCache();
@@ -1352,16 +1351,20 @@ function askExample(text) {
     smartSearch();
 }
 
-function smartFindStudent(nameNorm, students) {
+// Retourne TOUS les élèves correspondants (gère les noms composés: chaque mot doit apparaître)
+function smartFindStudents(nameNorm, students) {
+    if (!nameNorm) return [];
+    // 1) correspondance sur le nom complet
     let hits = students.filter(s => normalizeAr(s.firstName + ' ' + s.lastName).includes(nameNorm));
-    if (hits.length === 0 && nameNorm.includes(' ')) {
-        const first = nameNorm.split(' ')[0];
-        hits = students.filter(s => normalizeAr(s.firstName).includes(first) || normalizeAr(s.lastName).includes(first));
-    }
+    // 2) sinon : chaque mot doit apparaître dans le prénom OU le nom
     if (hits.length === 0) {
-        hits = students.filter(s => normalizeAr(s.firstName).includes(nameNorm) || normalizeAr(s.lastName).includes(nameNorm));
+        const words = nameNorm.split(' ');
+        hits = students.filter(s => {
+            const fn = normalizeAr(s.firstName), ln = normalizeAr(s.lastName);
+            return words.every(w => fn.includes(w) || ln.includes(w));
+        });
     }
-    return hits[0] || null;
+    return hits;
 }
 
 function smartInfoCard(title, body) {
@@ -1437,7 +1440,28 @@ function renderClassesAnswer(student, fullName) {
 function renderGradesAnswer(student, fullName, grades) {
     const recs = grades.filter(g => String(g.studentId) === String(student.id)).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     if (recs.length === 0) return smartInfoCard('لا توجد تقييمات', 'لم يتم تقييم الطالب <b>' + fullName + '</b> بعد');
-    const avg = (recs.reduce((s, g) => s + (parseFloat(g.score) || 0), 0) / recs.length).toFixed(1);
+    // 1. Initialisation des variables pour la moyenne pondérée
+    let totalPoints = 0;
+    let totalCoefficients = 0;
+
+    // 2. Boucle pour extraire le coefficient et accumuler les valeurs
+    recs.forEach(g => {
+        const score = parseFloat(g.score) || 0;
+        const subjectName = g.subject || ''; // On suppose que le nom de la matière est dans 'title'
+        
+        // RegEx pour trouver un nombre entre parenthèses, ex: (2) ou (1.5)
+        const match = subjectName.match(/\((\d+(?:\.\d+)?)\)/);
+        
+        // Si un coefficient est trouvé, on le prend, sinon on met 1 par défaut
+        const coefficient = match ? parseFloat(match[1]) : 1;
+
+        totalPoints += score * coefficient;
+        totalCoefficients += coefficient;
+    });
+
+    // 3. Calcul de la moyenne finale
+    const avg = totalCoefficients > 0 ? (totalPoints / totalCoefficients).toFixed(1) : "0.0";
+
     const rows = recs.map(g => `
         <tr class="hover:bg-slate-50">
             <td class="px-4 py-2.5 text-sm text-slate-700">${g.subject || '-'}</td>
@@ -1487,6 +1511,45 @@ function renderGeneralAnswer(student, fullName, attendance, grades) {
     return smartAnswerShell('معلومات الطالب ' + fullName, inner);
 }
 
+let lastSmartQuery = '';
+let lastSmartAttendance = [];
+let lastSmartGrades = [];
+
+function renderStudentPicker(hits) {
+    const cards = hits.map(s => `
+        <button onclick="pickStudent(${s.id})" class="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 transition-all text-right fade-in">
+            <div>
+                <p class="font-bold text-slate-800">${s.firstName} ${s.lastName}</p>
+                <p class="text-xs text-slate-500">المعرف الوحيد: ${s.uniqueId || '-'} | رقم البطاقة: ${s.idCard || '-'}</p>
+            </div>
+            <i class="fas fa-chevron-left text-slate-400"></i>
+        </button>`).join('');
+    return smartAnswerShell('تم العثور على ' + hits.length + ' طلاب بهذا الاسم',
+        `<p class="text-sm text-slate-500 mb-4">اختر الطالب المقصود لعرض الإجابة:</p><div class="space-y-2">${cards}</div>`);
+}
+
+function pickStudent(id) {
+    const student = (allCache['students'] || []).find(s => String(s.id) === String(id));
+    if (!student) return;
+    renderSmartAnswer(student, lastSmartQuery, lastSmartAttendance, lastSmartGrades);
+}
+
+function renderSmartAnswer(student, q, attendance, grades) {
+    const fullName = student.firstName + ' ' + student.lastName;
+    let html;
+    if (q.includes('حضور') || q.includes('غياب')) {
+        html = renderAttendanceAnswer(student, fullName, attendance);
+    } else if (q.includes('قسم')) {
+        html = renderClassesAnswer(student, fullName);
+    } else if (q.includes('اعداد') || q.includes('عداد') || q.includes('عدد') || q.includes('درجات') || q.includes('نقاط') || q.includes('معدل') || q.includes('تقييم') || q.includes('احصائيات') || q.includes('احصاء')) {
+        html = renderGradesAnswer(student, fullName, grades);
+    } else {
+        html = renderGeneralAnswer(student, fullName, attendance, grades);
+    }
+    document.getElementById('smart-result').innerHTML = html;
+    document.getElementById('smart-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
 async function smartSearch() {
     const query = document.getElementById('smart-query').value;
     const resultDiv = document.getElementById('smart-result');
@@ -1501,30 +1564,23 @@ async function smartSearch() {
     const q = normalizeAr(query);
     const tokens = q.split(' ').filter(t => t && !SMART_STOP_WORDS.includes(t));
     const nameNorm = tokens.join(' ');
+    lastSmartQuery = q;
+    lastSmartAttendance = attendance;
+    lastSmartGrades = grades;
 
     if (!nameNorm) {
         resultDiv.innerHTML = smartInfoCard('لم أفهم السؤال', 'اكتب اسم الطالب بعد السؤال، مثال: « نسبة حضور الطالب أحمد »');
         return;
     }
 
-    const student = smartFindStudent(nameNorm, students);
-    if (!student) {
+    const hits = smartFindStudents(nameNorm, students);
+    if (hits.length === 0) {
         resultDiv.innerHTML = smartInfoCard('لم يتم العثور على طالب', 'لا يوجد طالب اسمه: <b>' + nameNorm + '</b> — تحقق من التهجئة');
-        return;
-    }
-
-    const fullName = student.firstName + ' ' + student.lastName;
-    let html;
-    if (q.includes('حضور') || q.includes('غياب')) {
-        html = renderAttendanceAnswer(student, fullName, attendance);
-    } else if (q.includes('قسم')) {
-        html = renderClassesAnswer(student, fullName);
-    } else if (q.includes('اعداد') || q.includes('عداد') || q.includes('عدد') || q.includes('درجات') || q.includes('نقاط') || q.includes('معدل') || q.includes('تقييم') || q.includes('احصائيات') || q.includes('احصاء')) {
-        html = renderGradesAnswer(student, fullName, grades);
+    } else if (hits.length === 1) {
+        renderSmartAnswer(hits[0], q, attendance, grades);
     } else {
-        html = renderGeneralAnswer(student, fullName, attendance, grades);
+        resultDiv.innerHTML = renderStudentPicker(hits);
     }
-    resultDiv.innerHTML = html;
 }
 
 // ==================== EXPORT ====================
