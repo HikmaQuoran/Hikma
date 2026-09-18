@@ -1489,7 +1489,7 @@ function renderGradesAnswer(student, fullName, grades) {
         <p class="text-slate-500 text-sm mb-4">الطالب: <b class="text-slate-800">${fullName}</b></p>
         <div class="grid grid-cols-2 gap-4 mb-5">
             ${statBlock('عدد التقييمات', recs.length, 'blue')}
-            ${statBlock('المعدل العام', avg + ' / 20', parseFloat(avg) >= 10 ? 'green' : 'red')}
+            ${statBlock('المعدل العام', `<span dir="ltr">${avg} / 20</span>`, parseFloat(avg) >= 10 ? 'green' : 'red')}
         </div>
         <div class="border border-slate-200 rounded-xl overflow-hidden">
             <table class="w-full">
