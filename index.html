@@ -1401,6 +1401,7 @@ function renderAttendanceAnswer(student, fullName, attendance) {
     const present = recs.filter(a => a.present === 'نعم').length;
     const absent = recs.length - present;
     const rate = Math.round(present / recs.length * 100);
+    const NT = rate * 20 / 100;
     const barColor = rate >= 80 ? 'bg-green-500' : rate >= 50 ? 'bg-amber-500' : 'bg-red-500';
     const lastDate = recs.map(r => r.date).sort().pop();
     const inner = `
@@ -1410,7 +1411,23 @@ function renderAttendanceAnswer(student, fullName, attendance) {
             ${statBlock('أيام الحضور', present, 'green')}
             ${statBlock('أيام الغياب', absent, 'red')}
         </div>
-        <div class="mb-2 flex justify-between text-sm font-bold"><span class="text-slate-600">نسبة الحضور</span><span class="text-slate-800">${rate}%</span></div>
+   <div class="mb-3 flex items-center gap-4 text-base font-bold">
+
+    <!-- نسبة الحضور -->
+    <div class="flex flex-1 items-center justify-between rounded-lg border-2 border-blue-300 bg-blue-50 px-4 py-3 shadow-sm">
+        <span class="text-blue-700">نسبة الحضور</span>
+        <span class="text-xl font-extrabold text-blue-900">${rate}%</span>
+    </div>
+
+    <!-- العدد المسند -->
+    <div class="flex flex-1 items-center justify-between rounded-lg border-2 border-green-300 bg-green-50 px-4 py-3 shadow-sm">
+        <span class="text-green-700">العدد المسند على الحضور</span>
+        <span class="text-xl font-extrabold text-green-900">${NT}</span>
+    </div>
+
+</div>
+
+
         <div class="w-full bg-slate-100 rounded-full h-4 overflow-hidden"><div class="${barColor} h-4 rounded-full transition-all" style="width:${rate}%"></div></div>
         <p class="text-xs text-slate-400 mt-4">آخر تسجيل: ${lastDate}</p>`;
     return smartAnswerShell('نسبة حضور الطالب ' + fullName, inner);
