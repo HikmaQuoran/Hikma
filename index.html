@@ -228,11 +228,11 @@
     <div id="smartsearch-section" class="hidden fade-in">
         <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 mb-6 no-print">
             <h2 class="text-2xl font-bold text-slate-800 mb-1"><i class="fas fa-brain text-indigo-600 ml-2"></i>البحث الذكي</h2>
-            <p class="text-slate-500 mb-5">اسأل بالعربية عن أي طالب، مثال: « نسبة حضور الطالب أحمد »</p>
+            <p class="text-slate-500 mb-5">اسأل بالعربية عن أي طالب أو أستاذ، مثال: « نسبة حضور الطالب أحمد » أو « جدول الأستاذ محمد »</p>
             <div class="relative">
                 <i class="fas fa-search absolute right-4 top-1/2 -translate-y-1/2 text-indigo-400"></i>
                 <input type="text" id="smart-query" onkeypress="if(event.key==='Enter')smartSearch()"
-                    placeholder="اكتب سؤالك هنا مثلاً: قسم الطالب أحمد"
+                    placeholder="اكتب سؤالك هنا مثلاً: قسم الطالب أحمد أو جدول الأستاذ محمد"
                     class="w-full pr-12 pl-4 py-4 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all text-lg">
             </div>
             <button onclick="smartSearch()" class="mt-4 w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 rounded-xl shadow-lg shadow-indigo-200 transition-all font-bold text-lg">
@@ -242,6 +242,8 @@
                 <button onclick="askExample('أعداد الطالب أحمد')" class="px-4 py-2 rounded-full bg-slate-100 hover:bg-indigo-100 hover:text-indigo-700 text-slate-600 text-sm font-medium transition-all">أعداد الطالب أحمد</button>
                 <button onclick="askExample('نسبة حضور الطالب أحمد')" class="px-4 py-2 rounded-full bg-slate-100 hover:bg-indigo-100 hover:text-indigo-700 text-slate-600 text-sm font-medium transition-all">نسبة حضور الطالب أحمد</button>
                 <button onclick="askExample('قسم الطالب أحمد')" class="px-4 py-2 rounded-full bg-slate-100 hover:bg-indigo-100 hover:text-indigo-700 text-slate-600 text-sm font-medium transition-all">قسم الطالب أحمد</button>
+                <button onclick="askExample('جدول الأستاذ محمد')" class="px-4 py-2 rounded-full bg-amber-50 hover:bg-amber-100 hover:text-amber-700 text-amber-600 text-sm font-medium transition-all">جدول الأستاذ محمد</button>
+                <button onclick="askExample('أقسام الأستاذ محمد')" class="px-4 py-2 rounded-full bg-amber-50 hover:bg-amber-100 hover:text-amber-700 text-amber-600 text-sm font-medium transition-all">أقسام الأستاذ محمد</button>
             </div>
         </div>
         <div id="smart-result"></div>
@@ -1338,7 +1340,10 @@ function normalizeAr(s) {
         .toLowerCase();
 }
 
-const SMART_STOP_WORDS = ['الطالب','الطالبه','طالب','الحضور','حضور','الغياب','غياب','نسبه','النسبه','قسم','القسم','اقسام','الاقسام','اعداد','عداد','عدد','العدد','احصائيات','احصاء','درجات','الدرجات','نقاط','النقاط','معدل','المعدل','تقييم','التقييم','مواد','المواد','معلم','المدرس','الاستاذ','اليوم','التاريخ','كم','ماذا'];
+const SMART_STOP_WORDS = ['الطالب','الطالبه','طالب','تلميذ','التلميذ','الحضور','حضور','الغياب','غياب','نسبه','النسبه',
+'قسم','القسم','اقسام','الاقسام','اعداد','عداد','عدد','العدد','احصائيات','احصاء','درجات','الدرجات','نقاط','النقاط',
+'معدل','المعدل','تقييم','التقييم','مواد','المواد','اليوم','التاريخ','كم','ماذا',
+'استاذ','الاستاذ','مدرس','المدرس','معلم','المعلم','جدول','الجدول','توقيت','التوقيت','يوم','حصص','حصه','طلاب','الطلاب'];
 
 async function prepareSmartSearch() {
     await refreshCache();
@@ -1352,6 +1357,42 @@ function askExample(text) {
 }
 
 // Retourne TOUS les élèves correspondants (gère les noms composés: chaque mot doit apparaître)
+// ---- Recherche floue (tolérance aux fautes de frappe) : distance de Levenshtein ----
+function levenshtein(a, b) {
+    const m = a.length, n = b.length;
+    const dp = Array.from({length: m + 1}, () => new Array(n + 1).fill(0));
+    for (let i = 0; i <= m; i++) dp[i][0] = i;
+    for (let j = 0; j <= n; j++) dp[0][j] = j;
+    for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+            dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] : 1 + Math.min(dp[i-1][j-1], dp[i-1][j], dp[i][j-1]);
+        }
+    }
+    return dp[m][n];
+}
+
+function fuzzyMatchPeople(nameNorm, people) {
+    const scored = people.map(p => {
+        const full = normalizeAr(p.firstName + ' ' + p.lastName);
+        const dist = levenshtein(nameNorm, full);
+        const ratio = dist / Math.max(full.length, nameNorm.length, 1);
+        return { p, dist, ratio };
+    }).filter(x => x.ratio <= 0.4)
+      .sort((a, b) => a.dist - b.dist);
+    return scored.slice(0, 5).map(x => x.p);
+}
+
+// ---- Détection : la question concerne-t-elle un الطالب أو un الأستاذ ----
+function detectEntityType(qNorm) {
+    const teacherWords = ['استاذ', 'الاستاذ', 'مدرس', 'المدرس', 'معلم', 'المعلم'];
+    const studentWords = ['طالب', 'الطالب', 'تلميذ', 'التلميذ'];
+    const isTeacher = teacherWords.some(w => qNorm.includes(w));
+    const isStudent = studentWords.some(w => qNorm.includes(w));
+    if (isTeacher && !isStudent) return 'teacher';
+    if (isStudent && !isTeacher) return 'student';
+    return 'both';
+}
+
 function smartFindStudents(nameNorm, students) {
     if (!nameNorm) return [];
     // 1) correspondance sur le nom complet
@@ -1364,6 +1405,22 @@ function smartFindStudents(nameNorm, students) {
             return words.every(w => fn.includes(w) || ln.includes(w));
         });
     }
+    // 3) sinon : recherche floue (tolère les fautes de frappe)
+    if (hits.length === 0) hits = fuzzyMatchPeople(nameNorm, students);
+    return hits;
+}
+
+function smartFindTeachers(nameNorm, teachers) {
+    if (!nameNorm) return [];
+    let hits = teachers.filter(t => normalizeAr(t.firstName + ' ' + t.lastName).includes(nameNorm));
+    if (hits.length === 0) {
+        const words = nameNorm.split(' ');
+        hits = teachers.filter(t => {
+            const fn = normalizeAr(t.firstName), ln = normalizeAr(t.lastName);
+            return words.every(w => fn.includes(w) || ln.includes(w));
+        });
+    }
+    if (hits.length === 0) hits = fuzzyMatchPeople(nameNorm, teachers);
     return hits;
 }
 
@@ -1528,6 +1585,104 @@ function renderGeneralAnswer(student, fullName, attendance, grades) {
     return smartAnswerShell('معلومات الطالب ' + fullName, inner);
 }
 
+// ==================== RÉPONSES POUR LES PROFESSEURS ====================
+function renderTeacherClassesAnswer(teacher, fullName) {
+    const classes = (allCache['classes'] || []).filter(c => String(c.teacherId) === String(teacher.id));
+    if (classes.length === 0) return smartInfoCard('لا توجد أقسام', 'الأستاذ <b>' + fullName + '</b> غير مسند لأي قسم');
+    const deptIds = [...new Set(classes.map(c => String(c.deptNameId)))];
+    const deptNames = deptIds.map(id => getNameById(id, 'deptNames', 'name'));
+    const studentIds = [...new Set(classes.map(c => String(c.studentId)))];
+    const inner = `
+        <p class="text-slate-500 text-sm mb-4">الأستاذ: <b class="text-slate-800">${fullName}</b></p>
+        <div class="grid grid-cols-2 gap-4 mb-5">
+            ${statBlock('عدد الأقسام', deptIds.length, 'blue')}
+            ${statBlock('عدد الطلاب', studentIds.length, 'green')}
+        </div>
+        <div class="bg-amber-50 rounded-xl p-4">
+            <p class="text-sm text-amber-600 mb-1"><i class="fas fa-chalkboard ml-1"></i>الأقسام المسندة</p>
+            <p class="font-bold text-amber-800 text-lg">${deptNames.join('، ')}</p>
+        </div>`;
+    return smartAnswerShell('أقسام الأستاذ ' + fullName, inner);
+}
+
+function renderTeacherScheduleAnswer(teacher, fullName) {
+    const recs = (allCache['schedule'] || []).filter(s => String(s.teacherId) === String(teacher.id));
+    if (recs.length === 0) return smartInfoCard('لا يوجد جدول', 'لا يوجد جدول زمني مسجل للأستاذ <b>' + fullName + '</b>');
+    const rows = recs.map(s => `
+        <tr class="hover:bg-slate-50">
+            <td class="px-4 py-2.5 text-sm text-slate-700">${getNameById(s.deptNameId, 'deptNames', 'name')}</td>
+            <td class="px-4 py-2.5 text-sm text-slate-700">${s.day || '-'}</td>
+            <td class="px-4 py-2.5 text-sm font-mono text-slate-700">${s.timing || '-'}</td>
+        </tr>`).join('');
+    const inner = `
+        <p class="text-slate-500 text-sm mb-4">الأستاذ: <b class="text-slate-800">${fullName}</b></p>
+        <div class="border border-slate-200 rounded-xl overflow-hidden">
+            <table class="w-full">
+                <thead class="bg-slate-50 border-b border-slate-100"><tr>
+                    <th class="px-4 py-3 text-right text-sm font-semibold text-slate-700">القسم</th>
+                    <th class="px-4 py-3 text-right text-sm font-semibold text-slate-700">اليوم</th>
+                    <th class="px-4 py-3 text-right text-sm font-semibold text-slate-700">التوقيت</th>
+                </tr></thead>
+                <tbody class="divide-y divide-slate-100">${rows}</tbody>
+            </table>
+        </div>`;
+    return smartAnswerShell('جدول الأستاذ ' + fullName, inner);
+}
+
+function renderTeacherGeneralAnswer(teacher, fullName) {
+    const classes = (allCache['classes'] || []).filter(c => String(c.teacherId) === String(teacher.id));
+    const deptIds = [...new Set(classes.map(c => String(c.deptNameId)))];
+    const studentIds = [...new Set(classes.map(c => String(c.studentId)))];
+    const schedCount = (allCache['schedule'] || []).filter(s => String(s.teacherId) === String(teacher.id)).length;
+    const inner = `
+        <div class="flex items-center gap-4 mb-6">
+            <div class="w-14 h-14 bg-amber-100 rounded-full flex items-center justify-center text-amber-600 text-2xl"><i class="fas fa-chalkboard-teacher"></i></div>
+            <div>
+                <p class="font-bold text-xl text-slate-800">${fullName}</p>
+                <p class="text-sm text-slate-500">رقم البطاقة: ${teacher.idCard || '-'} | الهاتف: ${teacher.phone || '-'}</p>
+            </div>
+        </div>
+        <div class="grid grid-cols-3 gap-4">
+            ${statBlock('عدد الأقسام', deptIds.length, 'blue')}
+            ${statBlock('عدد الطلاب', studentIds.length, 'green')}
+            ${statBlock('حصص الجدول', schedCount, 'amber')}
+        </div>`;
+    return smartAnswerShell('معلومات الأستاذ ' + fullName, inner);
+}
+
+function renderTeacherPicker(hits) {
+    const cards = hits.map(t => `
+        <button onclick="pickTeacher(${t.id})" class="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 transition-all text-right fade-in">
+            <div>
+                <p class="font-bold text-slate-800">${t.firstName} ${t.lastName}</p>
+                <p class="text-xs text-slate-500">رقم البطاقة: ${t.idCard || '-'} | الهاتف: ${t.phone || '-'}</p>
+            </div>
+            <i class="fas fa-chevron-left text-slate-400"></i>
+        </button>`).join('');
+    return smartAnswerShell('تم العثور على ' + hits.length + ' أساتذة بهذا الاسم',
+        `<p class="text-sm text-slate-500 mb-4">اختر الأستاذ المقصود لعرض الإجابة:</p><div class="space-y-2">${cards}</div>`);
+}
+
+function pickTeacher(id) {
+    const teacher = (allCache['teachers'] || []).find(t => String(t.id) === String(id));
+    if (!teacher) return;
+    renderSmartTeacherAnswer(teacher, lastSmartQuery);
+}
+
+function renderSmartTeacherAnswer(teacher, q) {
+    const fullName = teacher.firstName + ' ' + teacher.lastName;
+    let html;
+    if (q.includes('جدول') || q.includes('توقيت') || q.includes('حصص')) {
+        html = renderTeacherScheduleAnswer(teacher, fullName);
+    } else if (q.includes('قسم') || q.includes('طلاب') || q.includes('اقسام')) {
+        html = renderTeacherClassesAnswer(teacher, fullName);
+    } else {
+        html = renderTeacherGeneralAnswer(teacher, fullName);
+    }
+    document.getElementById('smart-result').innerHTML = html;
+    document.getElementById('smart-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
 let lastSmartQuery = '';
 let lastSmartAttendance = [];
 let lastSmartGrades = [];
@@ -1575,10 +1730,12 @@ async function smartSearch() {
 
     await refreshCache();
     const students = allCache['students'] || [];
+    const teachers = allCache['teachers'] || [];
     const attendance = await getAll('attendance');
     const grades = await getAll('grades');
 
     const q = normalizeAr(query);
+    const entityType = detectEntityType(q);
     const tokens = q.split(' ').filter(t => t && !SMART_STOP_WORDS.includes(t));
     const nameNorm = tokens.join(' ');
     lastSmartQuery = q;
@@ -1586,13 +1743,33 @@ async function smartSearch() {
     lastSmartGrades = grades;
 
     if (!nameNorm) {
-        resultDiv.innerHTML = smartInfoCard('لم أفهم السؤال', 'اكتب اسم الطالب بعد السؤال، مثال: « نسبة حضور الطالب أحمد »');
+        resultDiv.innerHTML = smartInfoCard('لم أفهم السؤال', 'اكتب اسم الطالب أو الأستاذ بعد السؤال، مثال: « نسبة حضور الطالب أحمد » أو « جدول الأستاذ محمد »');
         return;
     }
 
-    const hits = smartFindStudents(nameNorm, students);
+    // البحث عن أستاذ صراحة
+    if (entityType === 'teacher') {
+        const tHits = smartFindTeachers(nameNorm, teachers);
+        if (tHits.length === 0) {
+            resultDiv.innerHTML = smartInfoCard('لم يتم العثور على أستاذ', 'لا يوجد أستاذ اسمه: <b>' + nameNorm + '</b> — تحقق من التهجئة');
+        } else if (tHits.length === 1) {
+            renderSmartTeacherAnswer(tHits[0], q);
+        } else {
+            resultDiv.innerHTML = renderTeacherPicker(tHits);
+        }
+        return;
+    }
+
+    // بحث افتراضي عن طالب، مع تجربة الأستاذ في حال الغموض أو عدم وجود نتيجة
+    let hits = smartFindStudents(nameNorm, students);
+    if (hits.length === 0 && entityType === 'both') {
+        const tHits = smartFindTeachers(nameNorm, teachers);
+        if (tHits.length === 1) { renderSmartTeacherAnswer(tHits[0], q); return; }
+        if (tHits.length > 1) { resultDiv.innerHTML = renderTeacherPicker(tHits); return; }
+    }
+
     if (hits.length === 0) {
-        resultDiv.innerHTML = smartInfoCard('لم يتم العثور على طالب', 'لا يوجد طالب اسمه: <b>' + nameNorm + '</b> — تحقق من التهجئة');
+        resultDiv.innerHTML = smartInfoCard('لم يتم العثور على نتيجة', 'لا يوجد طالب أو أستاذ بالاسم: <b>' + nameNorm + '</b> — تحقق من التهجئة');
     } else if (hits.length === 1) {
         renderSmartAnswer(hits[0], q, attendance, grades);
     } else {
@@ -1836,17 +2013,33 @@ function showDBError(e) {
         card.appendChild(box);
     }
     const status = (e && e.message) ? e.message : String(e);
+
+    // كشف ما إذا كانت الصفحة تعمل داخل إطار iframe محاط بسياسة أمان صارمة (مثل معاينات المحرّرات)
+    let inSandboxedFrame = false;
+    try { inSandboxedFrame = window.self !== window.top; } catch (err) { inSandboxedFrame = true; }
+
     const causes = {
         '404': 'الجداول غير موجودة: نفّذ ملف supabase_tables.sql في SQL Editor',
         '401': 'مفتاح anon key غير صحيح أو منسوخ بشكل غير كامل',
-        'Failed to fetch': 'تعذر الوصول إلى Supabase: تحقق من Project URL والإنترنت'
+        'Failed to fetch': inSandboxedFrame
+            ? 'تعذر الاتصال: يبدو أنك تفتح الصفحة داخل معاينة/إطار محمي (مثل معاينة محرر أو منصة أخرى) يمنع سياسة الأمان (CSP) الخاصة به الاتصال بأي موقع خارجي غير مصرح به مسبقاً. هذا القيد غير موجود عند فتح الملف مباشرة في المتصفح أو بعد رفعه على GitHub Pages.'
+            : 'تعذر الوصول إلى Supabase: تحقق من Project URL والإنترنت'
     };
     let hint = 'تحقق من SUPABASE_URL و SUPABASE_KEY، وأن المشروع غير موقوف (Paused)';
     for (const k in causes) { if (status.includes(k)) { hint = causes[k]; break; } }
+
+    const previewNote = (inSandboxedFrame && status.includes('Failed to fetch'))
+        ? `<p class="text-amber-700 text-xs mt-2 bg-amber-50 border border-amber-200 rounded-lg p-2">
+             <i class="fas fa-circle-info ml-1"></i>
+             افتح رابط GitHub Pages مباشرة في تبويب متصفح جديد (وليس داخل نافذة معاينة) للتأكد من عمل الاتصال بشكل طبيعي.
+           </p>`
+        : '';
+
     box.innerHTML = `
         <p class="text-red-700 font-bold text-sm mb-1"><i class="fas fa-exclamation-triangle ml-1"></i> خطأ في الاتصال بقاعدة البيانات</p>
         <p class="text-red-600 text-xs leading-relaxed break-all">${status}</p>
         <p class="text-slate-600 text-xs mt-2 font-medium">${hint}</p>
+        ${previewNote}
         <button onclick="forceLocalMode()" class="mt-3 w-full px-4 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm font-bold transition-all">العمل مؤقتاً بدون مشاركة البيانات (محلي)</button>`;
 }
 
