@@ -287,7 +287,7 @@
                 <h2 id="page-title" class="text-xl sm:text-2xl font-bold text-slate-800">المدرسين</h2>
                 <p id="page-desc" class="text-slate-500 mt-1">إدارة بيانات المدرسين</p>
             </div>
-            <button onclick="openModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl shadow-lg shadow-blue-200 transition-all flex items-center gap-2 font-medium">
+            <button id="btn-add-new" onclick="openModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl shadow-lg shadow-blue-200 transition-all flex items-center gap-2 font-medium">
                 <i class="fas fa-plus"></i>
                 <span>إضافة جديد</span>
             </button>
@@ -701,6 +701,50 @@ const sections = {
     }
 };
 
+// ==================== ROLE HELPERS ====================
+// المدير: كل شيء. المستخدم = أستاذ:
+//   - الحضور والتقييم: يرى ويضيف ويعدّل ويحذف فقط في الأقسام والتلاميذ المسندين إليه
+//   - الجدول الزمني وبقية الأقسام: عرض فقط
+function isAdminUser() { return !!currentUser && currentUser.role === 'admin'; }
+function canWriteSection(section) {
+    if (isAdminUser()) return true;
+    return !!currentUser && (section === 'attendance' || section === 'grades');
+}
+function denyWrite() { showToast('غير مسموح لك بالإضافة أو التعديل أو الحذف', 'error'); }
+
+function nameKey(s) {
+    return normalizeAr(s).split(' ').filter(Boolean).sort().join(' ');
+}
+// أقسام الأستاذ الحالي (سطور جدول "الأقسام" التي اسمه فيها كمدرّس)
+function myClassRows() {
+    if (isAdminUser()) return (allCache['classes'] || []);
+    if (!currentUser) return [];
+    const me = nameKey(currentUser.fullName);
+    if (!me) return [];
+    const myTeacherIds = (allCache['teachers'] || [])
+        .filter(t => nameKey((t.firstName || '') + ' ' + (t.lastName || '')) === me)
+        .map(t => String(t.id));
+    return (allCache['classes'] || []).filter(c => myTeacherIds.includes(String(c.teacherId)));
+}
+function myDeptIds() { return [...new Set(myClassRows().map(c => String(c.deptNameId)))]; }
+function myStudentIds(deptId) {
+    return [...new Set(myClassRows()
+        .filter(c => deptId === undefined || String(c.deptNameId) === String(deptId))
+        .map(c => String(c.studentId)))];
+}
+function isMyPair(deptId, studentId) {
+    if (isAdminUser()) return true;
+    return myClassRows().some(c => String(c.deptNameId) === String(deptId) && String(c.studentId) === String(studentId));
+}
+function recordHasUserName(rec) { return isMyPair(rec.deptNameId, rec.studentId); }
+function filterOwnRecords(list) {
+    return isAdminUser() ? list : list.filter(recordHasUserName);
+}
+function applyRoleUI() {
+    const addBtn = document.getElementById('btn-add-new');
+    if (addBtn) addBtn.classList.toggle('hidden', !canWriteSection(currentSection));
+}
+
 // ==================== RELATION HELPERS ====================
 function getNameById(id, source, field1, field2) {
     if (!allCache[source]) return 'غير معروف';
@@ -834,6 +878,10 @@ async function loadData() {
     await refreshCache();
     setupClassFilters();
     currentData = await getAll(currentSection);
+    if (currentSection === 'attendance' || currentSection === 'grades') {
+        currentData = filterOwnRecords(currentData);
+    }
+    applyRoleUI();
     document.getElementById('stat-total').textContent = currentData.length;
     renderTable(currentData);
 }
@@ -966,7 +1014,8 @@ function renderTable(data) {
     const empty = document.getElementById('empty-state');
     const config = sections[currentSection];
 
-    thead.innerHTML = '<tr>' + config.tableCols.map(col => `<th class="px-6 py-4 text-right text-sm font-semibold text-netral-950">${col}</th>`).join('') + '</tr>';
+    const cols = canWriteSection(currentSection) ? config.tableCols : config.tableCols.filter(c => c !== 'الإجراءات');
+    thead.innerHTML = '<tr>' + cols.map(col => `<th class="px-6 py-4 text-right text-sm font-semibold text-netral-950">${col}</th>`).join('') + '</tr>';
 
     if (data.length === 0) {
         tbody.innerHTML = '';
@@ -1027,7 +1076,7 @@ function renderTable(data) {
             cells += `<td class="px-6 py-4 text-sm font-bold ${item.score >= 10 ? 'text-green-600' : 'text-red-600'}">${item.score}/20</td>`;
         }
 
-        cells += `<td class="px-6 py-4 text-sm no-print">
+        if (canWriteSection(currentSection)) cells += `<td class="px-6 py-4 text-sm no-print">
             <div class="flex gap-2">
                 <button onclick="editItem(${item.id})" class="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all flex items-center justify-center" title="تعديل">
                     <i class="fas fa-edit text-xs"></i>
@@ -1044,6 +1093,7 @@ function renderTable(data) {
 
 // ==================== MODAL ====================
 async function openModal(editItemData = null) {
+    if (!canWriteSection(currentSection)) { denyWrite(); return; }
     editingId = editItemData ? editItemData.id : null;
     document.getElementById('modal-title').textContent = editItemData ? 'تعديل' : 'إضافة جديد';
     document.getElementById('modal').classList.remove('hidden');
@@ -1067,7 +1117,11 @@ async function openModal(editItemData = null) {
             input = document.createElement('select');
             input.className = 'w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white';
             input.innerHTML = '<option value="">اختر...</option>';
-            const items = allCache[field.source] || await getAll(field.source);
+            let items = allCache[field.source] || await getAll(field.source);
+            if (!isAdminUser() && (currentSection === 'attendance' || currentSection === 'grades')) {
+                if (field.source === 'deptNames') items = items.filter(x => myDeptIds().includes(String(x.id)));
+                if (field.source === 'students') items = items.filter(x => myStudentIds().includes(String(x.id)));
+            }
             items.forEach(item => {
                 let label = item[field.displayField] || '';
                 if (field.displayField2) label += ' ' + (item[field.displayField2] || '');
@@ -1148,9 +1202,10 @@ function filterStudentsByDept(deptNameId) {
     const classes = allCache['classes'] || [];
     const students = allCache['students'] || [];
 
-    const relatedStudentIds = classes
+    let relatedStudentIds = classes
         .filter(c => String(c.deptNameId) === String(deptNameId))
         .map(c => String(c.studentId));
+    if (!isAdminUser()) relatedStudentIds = relatedStudentIds.filter(id => myStudentIds(deptNameId).includes(id));
 
     const studentSelect = document.getElementById('field-studentId');
     if (!studentSelect) return;
@@ -1189,7 +1244,7 @@ function buildAttendanceBulkForm() {
             <select id="att-dept" onchange="loadAttendanceStudents()"
                 class="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white">
                 <option value="">اختر القسم...</option>
-                ${(allCache['deptNames'] || []).map(d => `<option value="${d.id}">${d.name}</option>`).join('')}
+                ${(allCache['deptNames'] || []).filter(d => isAdminUser() || myDeptIds().includes(String(d.id))).map(d => `<option value="${d.id}">${d.name}</option>`).join('')}
             </select>
         </div>
         <div id="att-students-wrap" class="hidden">
@@ -1223,7 +1278,8 @@ async function loadAttendanceStudents() {
     if (!deptId || !date) { wrap.classList.add('hidden'); empty.classList.add('hidden'); return; }
 
     const classes = (allCache['classes'] || []).filter(c => String(c.deptNameId) === String(deptId));
-    const studentIds = [...new Set(classes.map(c => String(c.studentId)))];
+    let studentIds = [...new Set(classes.map(c => String(c.studentId)))];
+    if (!isAdminUser()) studentIds = studentIds.filter(id => myStudentIds(deptId).includes(id));
     const students = (allCache['students'] || []).filter(s => studentIds.includes(String(s.id)));
 
     if (students.length === 0) { wrap.classList.add('hidden'); empty.classList.remove('hidden'); return; }
@@ -1249,6 +1305,7 @@ function setAllAttendance(value) {
 }
 
 async function saveBulkAttendance() {
+    if (!canWriteSection('attendance')) { denyWrite(); return; }
     const date = document.getElementById('att-date').value;
     const deptId = document.getElementById('att-dept').value;
     if (!date || !deptId) { showToast('يرجى اختيار التاريخ والقسم', 'error'); return; }
@@ -1257,9 +1314,10 @@ async function saveBulkAttendance() {
     try {
         // حذف سجلات نفس اليوم والقسم لتجنب التكرار
         const existing = await getAll('attendance');
-        const toDelete = existing.filter(a => a.date === date && String(a.deptNameId) === String(deptId));
+        const toDelete = existing.filter(a => a.date === date && String(a.deptNameId) === String(deptId) && (isAdminUser() || isMyPair(a.deptNameId, a.studentId)));
         for (const rec of toDelete) await remove('attendance', rec.id);
         for (const cb of checks) {
+            if (!isMyPair(deptId, cb.dataset.student)) continue;
             await add('attendance', {
                 date: date,
                 deptNameId: deptId,
@@ -1281,6 +1339,7 @@ function closeModal() {
 }
 
 async function saveData() {
+    if (!canWriteSection(currentSection)) { denyWrite(); return; }
     if (currentSection === 'attendance' && !editingId) {
         await saveBulkAttendance();
         return;
@@ -1302,6 +1361,13 @@ async function saveData() {
         }
     }
 
+    if (!isAdminUser() && (currentSection === 'attendance' || currentSection === 'grades')) {
+        if (!isMyPair(data.deptNameId, data.studentId)) {
+            showToast('هذا القسم أو التلميذ ليس ضمن أقسامك', 'error');
+            return;
+        }
+    }
+
     try {
         if (editingId) {
             data.id = editingId;
@@ -1320,11 +1386,16 @@ async function saveData() {
 
 // ==================== EDIT & DELETE ====================
 async function editItem(id) {
+    if (!canWriteSection(currentSection)) { denyWrite(); return; }
     const item = currentData.find(x => x.id === id);
+    if (item && !isAdminUser() && !recordHasUserName(item)) { denyWrite(); return; }
     if (item) openModal(item);
 }
 
 function deleteItem(id) {
+    if (!canWriteSection(currentSection)) { denyWrite(); return; }
+    const it = currentData.find(x => x.id === id);
+    if (it && !isAdminUser() && !recordHasUserName(it)) { denyWrite(); return; }
     deleteId = id;
     document.getElementById('delete-modal').classList.remove('hidden');
 }
@@ -1335,6 +1406,11 @@ function closeDeleteModal() {
 }
 
 async function confirmDelete() {
+    if (!canWriteSection(currentSection)) { closeDeleteModal(); denyWrite(); return; }
+    if (!isAdminUser()) {
+        const it = currentData.find(x => x.id === deleteId);
+        if (!it || !recordHasUserName(it)) { closeDeleteModal(); denyWrite(); return; }
+    }
     if (deleteId) {
         try {
             await remove(currentSection, deleteId);
@@ -1766,8 +1842,8 @@ async function smartSearch() {
     await refreshCache();
     const students = allCache['students'] || [];
     const teachers = allCache['teachers'] || [];
-    const attendance = await getAll('attendance');
-    const grades = await getAll('grades');
+    const attendance = filterOwnRecords(await getAll('attendance'));
+    const grades = filterOwnRecords(await getAll('grades'));
 
     const q = normalizeAr(query);
     const entityType = detectEntityType(q);
