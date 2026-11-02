@@ -252,7 +252,7 @@
     <div id="smartsearch-section" class="hidden fade-in">
         <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 mb-6 no-print">
             <h2 class="text-2xl font-bold text-slate-800 mb-1"><i class="fas fa-brain text-indigo-600 ml-2"></i>البحث الذكي</h2>
-            <p class="text-slate-500 mb-5">اسأل بالعربية عن أي طالب أو أستاذ، مثال: « نسبة حضور الطالب أحمد » أو « جدول الأستاذ محمد »</p>
+            <p class="text-slate-500 mb-5">اسأل بالعربية عن أي طالب أو أستاذ، مثال: « نسبة حضور الطالب أحمد » أو « نسبة حضور القسم التحضيري » أو « جدول الأستاذ محمد »</p>
             <div class="relative">
                 <i class="fas fa-search absolute right-4 top-1/2 -translate-y-1/2 text-indigo-400"></i>
                 <input type="text" id="smart-query" onkeypress="if(event.key==='Enter')smartSearch()"
@@ -263,6 +263,7 @@
                 <i class="fas fa-search ml-2"></i> بحث
             </button>
             <div class="flex flex-wrap gap-2 mt-4">
+                <button onclick="askExample('نسبة حضور القسم التحضيري')" class="px-4 py-2 rounded-full bg-emerald-50 hover:bg-emerald-100 hover:text-emerald-700 text-emerald-600 text-sm font-medium transition-all">نسبة حضور القسم التحضيري</button>
                 <button onclick="askExample('أعداد الطالب أحمد')" class="px-4 py-2 rounded-full bg-slate-100 hover:bg-indigo-100 hover:text-indigo-700 text-slate-600 text-sm font-medium transition-all">أعداد الطالب أحمد</button>
                 <button onclick="askExample('نسبة حضور الطالب أحمد')" class="px-4 py-2 rounded-full bg-slate-100 hover:bg-indigo-100 hover:text-indigo-700 text-slate-600 text-sm font-medium transition-all">نسبة حضور الطالب أحمد</button>
                 <button onclick="askExample('قسم الطالب أحمد')" class="px-4 py-2 rounded-full bg-slate-100 hover:bg-indigo-100 hover:text-indigo-700 text-slate-600 text-sm font-medium transition-all">قسم الطالب أحمد</button>
@@ -1833,6 +1834,143 @@ function renderSmartAnswer(student, q, attendance, grades) {
     document.getElementById('smart-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
+// ==================== نسبة حضور القسم ====================
+let lastDeptReport = null;
+
+function escHtml(t) {
+    return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function smartFindDepts(qNorm, nameNorm, depts) {
+    // 1) اسم القسم كاملاً موجود داخل السؤال
+    let hits = depts.filter(d => {
+        const n = normalizeAr(d.name);
+        return n && qNorm.includes(n);
+    });
+    // 2) أو ما كتبه المستخدم (بعد حذف الكلمات العامة) جزء من اسم القسم
+    if (hits.length === 0 && nameNorm) {
+        hits = depts.filter(d => normalizeAr(d.name).includes(nameNorm));
+        if (hits.length === 0) {
+            const stripAl = w => w.replace(/^ال/, '');
+            const words = nameNorm.split(' ').map(stripAl).filter(Boolean);
+            if (words.length) hits = depts.filter(d => {
+                const n = normalizeAr(d.name);
+                return words.every(w => n.includes(w));
+            });
+        }
+    }
+    return hits;
+}
+
+function buildDeptReport(dept, attendance) {
+    const classes = (allCache['classes'] || []).filter(c => String(c.deptNameId) === String(dept.id));
+    const recsDept = attendance.filter(a => String(a.deptNameId) === String(dept.id));
+    const ids = new Set(classes.map(c => String(c.studentId)));
+    recsDept.forEach(a => ids.add(String(a.studentId)));
+    const students = allCache['students'] || [];
+    const rows = [...ids].map(id => {
+        const st = students.find(s => String(s.id) === id);
+        if (!st) return null;
+        const recs = recsDept.filter(a => String(a.studentId) === id);
+        const present = recs.filter(a => a.present === 'نعم').length;
+        const total = recs.length;
+        const absent = total - present;
+        const rate = total ? Math.round(present / total * 100) : null;
+        const count = rate === null ? null : Number((rate * 20 / 100).toFixed(2));
+        return { name: ((st.firstName || '') + ' ' + (st.lastName || '')).trim(), present, absent, total, rate, count };
+    }).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+    const days = new Set(recsDept.map(a => a.date)).size;
+    const withData = rows.filter(r => r.rate !== null);
+    const avg = withData.length ? Math.round(withData.reduce((t, r) => t + r.rate, 0) / withData.length) : null;
+    return { dept, rows, days, avg };
+}
+
+function rateColor(rate) {
+    return rate === null ? 'slate' : rate >= 80 ? 'green' : rate >= 50 ? 'amber' : 'red';
+}
+
+function renderDeptAttendanceAnswer(dept, attendance) {
+    const rep = buildDeptReport(dept, attendance);
+    lastDeptReport = rep;
+    const dName = escHtml(dept.name);
+    if (rep.rows.length === 0) return smartInfoCard('لا يوجد طلاب في القسم', 'لا يوجد طلاب مسجلون في القسم <b>' + dName + '</b>');
+    const bodyRows = rep.rows.map((r, i) => {
+        const c = rateColor(r.rate);
+        const barBg = { green: 'bg-green-500', amber: 'bg-amber-500', red: 'bg-red-500', slate: 'bg-slate-300' }[c];
+        return `<tr class="border-b border-slate-100 hover:bg-slate-50">
+            <td class="px-3 py-2 text-center text-slate-400">${i + 1}</td>
+            <td class="px-3 py-2 font-medium text-slate-800 whitespace-nowrap">${escHtml(r.name)}</td>
+            <td class="px-3 py-2 text-center font-bold text-green-700">${r.present}</td>
+            <td class="px-3 py-2 text-center font-bold text-red-600">${r.absent}</td>
+            <td class="px-3 py-2 text-center text-slate-600">${r.total}</td>
+            <td class="px-3 py-2 min-w-[130px]">
+                <div class="flex items-center gap-2">
+                    <div class="flex-1 bg-slate-100 rounded-full h-2.5 overflow-hidden"><div class="${barBg} h-2.5 rounded-full" style="width:${r.rate || 0}%"></div></div>
+                    <span class="font-bold text-${c}-700 w-12 text-left">${r.rate === null ? '—' : r.rate + '%'}</span>
+                </div>
+            </td>
+            <td class="px-3 py-2 text-center font-bold text-blue-800">${r.count === null ? '—' : r.count}</td>
+        </tr>`;
+    }).join('');
+    const inner = `
+        <div class="grid grid-cols-3 gap-2 sm:gap-4 mb-5">
+            ${statBlock('عدد الطلاب', rep.rows.length, 'blue')}
+            ${statBlock('أيام التسجيل', rep.days, 'slate')}
+            ${statBlock('متوسط نسبة الحضور', rep.avg === null ? '—' : rep.avg + '%', rateColor(rep.avg))}
+        </div>
+        <div class="flex flex-wrap gap-2 mb-4 no-print">
+            <button onclick="exportDeptReportExcel()" class="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-bold transition-all"><i class="fas fa-file-excel ml-1"></i> تصدير Excel</button>
+            <button onclick="window.print()" class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-800 text-white text-sm font-bold transition-all"><i class="fas fa-print ml-1"></i> طباعة</button>
+        </div>
+        <div class="overflow-x-auto rounded-xl border border-slate-100">
+            <table class="w-full text-sm sm:text-base">
+                <thead class="bg-slate-50 border-b border-slate-100 text-slate-600">
+                    <tr>
+                        <th class="px-3 py-3 text-center">#</th>
+                        <th class="px-3 py-3 text-right">الطالب</th>
+                        <th class="px-3 py-3 text-center">أيام الحضور</th>
+                        <th class="px-3 py-3 text-center">أيام الغياب</th>
+                        <th class="px-3 py-3 text-center">المجموع</th>
+                        <th class="px-3 py-3 text-right">النسبة</th>
+                        <th class="px-3 py-3 text-center">العدد (من 20)</th>
+                    </tr>
+                </thead>
+                <tbody>${bodyRows}</tbody>
+            </table>
+        </div>`;
+    return smartAnswerShell('نسبة حضور القسم ' + dName, inner);
+}
+
+function renderDeptPicker(hits) {
+    const btns = hits.map(d => `<button onclick="pickDept('${d.id}')" class="w-full text-right px-4 py-3 rounded-xl border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 transition-all font-medium">
+        <i class="fas fa-layer-group text-indigo-500 ml-2"></i>${escHtml(d.name)}</button>`).join('');
+    return smartAnswerShell('تم العثور على ' + hits.length + ' أقسام بهذا الاسم', `<div class="space-y-2">${btns}</div>`);
+}
+
+function pickDept(id) {
+    const dept = (allCache['deptNames'] || []).find(d => String(d.id) === String(id));
+    if (!dept) return;
+    document.getElementById('smart-result').innerHTML = renderDeptAttendanceAnswer(dept, lastSmartAttendance);
+    document.getElementById('smart-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function exportDeptReportExcel() {
+    if (!lastDeptReport) return;
+    const data = lastDeptReport.rows.map((r, i) => ({
+        '#': i + 1,
+        'الطالب': r.name,
+        'أيام الحضور': r.present,
+        'أيام الغياب': r.absent,
+        'المجموع': r.total,
+        'النسبة %': r.rate === null ? '' : r.rate,
+        'العدد (من 20)': r.count === null ? '' : r.count
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'حضور القسم');
+    XLSX.writeFile(wb, 'حضور_القسم_' + lastDeptReport.dept.name + '.xlsx');
+}
+
 async function smartSearch() {
     const query = document.getElementById('smart-query').value;
     const resultDiv = document.getElementById('smart-result');
@@ -1853,9 +1991,21 @@ async function smartSearch() {
     lastSmartAttendance = attendance;
     lastSmartGrades = grades;
 
-    if (!nameNorm) {
+    if (!nameNorm && !smartFindDepts(q, '', allCache['deptNames'] || []).length) {
         resultDiv.innerHTML = smartInfoCard('لم أفهم السؤال', 'اكتب اسم الطالب أو الأستاذ بعد السؤال، مثال: « نسبة حضور الطالب أحمد » أو « جدول الأستاذ محمد »');
         return;
+    }
+
+    // نسبة حضور قسم كامل (مثال: نسبة حضور القسم التحضيري)
+    if (entityType !== 'teacher' && entityType !== 'student') {
+        const depts = allCache['deptNames'] || [];
+        const dHits = smartFindDepts(q, nameNorm, depts);
+        const asksDept = q.includes('قسم') || q.includes('حضور') || q.includes('غياب') || q.includes('نسبه');
+        if (dHits.length > 0 && (asksDept || smartFindStudents(nameNorm, students).length === 0)) {
+            if (dHits.length === 1) resultDiv.innerHTML = renderDeptAttendanceAnswer(dHits[0], attendance);
+            else resultDiv.innerHTML = renderDeptPicker(dHits);
+            return;
+        }
     }
 
     // البحث عن أستاذ صراحة
